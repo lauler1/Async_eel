@@ -2,6 +2,8 @@
 
 This project is a fork of the [Python Eel](https://github.com/python-eel/Eel) library.
 
+The new repository is in [Async_eel](https://github.com/lauler1/Async_eel)
+
 It provides an **asynchronous version** of Eel, built using the **Quart** server framework.
 
 The source code can be found in the `async_eel/` directory.

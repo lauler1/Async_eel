@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "async-eel"
+version = "0.1.0"
+description = "Async eel for Python"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "Leandro Auler", email = "yauler.leandro@gmail.com"}
+]
+
+dependencies = [
+	"icecream",
+	"importlib_resources",
+	"Jinja2",
+	"pyparsing",
+	"quart",
+	"typing_extensions"
+]
+
+[project.urls]
+Homepage = "https://github.com/lauler1/Async_eel"
