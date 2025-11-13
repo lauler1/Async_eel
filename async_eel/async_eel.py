@@ -6,10 +6,10 @@ from typing import Union, Any, Dict, List, Set, Tuple, Optional, Callable
 from typing_extensions import Literal
 from .aeel_types import OptionsDictT, WebSocketT
 import json as jsn
-try:
-    import bottle_websocket as wbs
-except ImportError:
-    import bottle.ext.websocket as wbs
+# try:
+    # import bottle_websocket as wbs
+# except ImportError:
+    # import bottle.ext.websocket as wbs
 import re as rgx
 import os
 from . import browsers as brw
@@ -22,10 +22,11 @@ import mimetypes
 
 from quart import Quart, websocket, Response, send_from_directory
 import asyncio
+import signal
 from icecream import IceCreamDebugger
 ic = IceCreamDebugger(prefix=f"async_eel|")
 # ic.configureOutput(prefix='async_eel| ')
-
+import logging
 
 class AsyncEel:
 
@@ -314,6 +315,11 @@ class AsyncEel:
         self.wait_ws_started = asyncio.Future() # Can only be used after start() is called.
 
 
+        # # Handle Ctrl+C
+        # loop = asyncio.get_event_loop()
+        # for sig in (signal.SIGINT, signal.SIGTERM):
+            # loop.add_signal_handler(sig, loop.stop)
+
         if self._start_args['port'] == 0:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.bind(('localhost', 0))
@@ -324,7 +330,7 @@ class AsyncEel:
             from jinja2 import Environment, FileSystemLoader, select_autoescape
             if not isinstance(self._start_args['jinja_templates'], str):
                 raise TypeError("'jinja_templates' start_arg/option must be of type str")
-            templates_path = os.path.join(root_path, self._start_args['jinja_templates'])
+            templates_path = os.path.join(self.root_path, self._start_args['jinja_templates'])
             self._start_args['jinja_env'] = Environment(
                 loader=FileSystemLoader(templates_path),
                 autoescape=select_autoescape(['html', 'xml'])
@@ -355,16 +361,29 @@ class AsyncEel:
         else:
             self.register_eel_routes(btl.default_app())
 
-        print("start: Current event loop:", id(asyncio.get_event_loop()))
+        # print("start: Current event loop:", id(asyncio.get_event_loop()))
         await app.startup()
-        asyncio.create_task(
-            self.app.run_task(
+        # asyncio.create_task(
+            # self.app.run_task(
+                # host=HOST,
+                # port=self._start_args['port'],
+            # )
+        # )  # Non-blocking
+        await self.app.run_task(
                 host=HOST,
                 port=self._start_args['port'],
             )
-        )  # Non-blocking
 
+        async def handle_exception(e):
+            self.app.logger.error(f"Unhandled exception: {e}")
+            sys.exit(1)
 
+        self.app.errorhandler(Exception)(handle_exception)
+        self.app.logger.setLevel(logging.DEBUG)
+
+        # loop = asyncio.get_event_loop()
+        # for sig in (signal.SIGINT, signal.SIGTERM):
+            # loop.add_signal_handler(sig, loop.stop)
 
     def show(self, *start_urls: str) -> None:
         ic(start_urls)
@@ -404,41 +423,52 @@ class AsyncEel:
 
 
     async def _eel(self) -> str:
+        try:
+            start_geometry = {'default': {'size': self._start_args['size'],
+                                          'position': self._start_args['position']},
+                              'pages':   self._start_args['geometry']}
 
-        start_geometry = {'default': {'size': self._start_args['size'],
-                                      'position': self._start_args['position']},
-                          'pages':   self._start_args['geometry']}
-
-        page = self._eel_js.replace('/** _py_functions **/',
-                               '_py_functions: %s,' % list(self._exposed_functions.keys()))
-        page = page.replace('/** _start_geometry **/',
-                            '_start_geometry: %s,' % self._safe_json(start_geometry))
-
-        return Response(page, mimetype="application/javascript")
+            page = self._eel_js.replace('/** _py_functions **/',
+                                   '_py_functions: %s,' % list(self._exposed_functions.keys()))
+            page = page.replace('/** _start_geometry **/',
+                                '_start_geometry: %s,' % self._safe_json(start_geometry))
+            result = Response(page, mimetype="application/javascript")
+        except Exception as e:
+            result = Response(f"(_eel) Internal Server Error: {e}", status=500)
+            sys.exit(1)
+        return result
 
 
     async def _root(self) -> btl.Response:
-        if not isinstance(self._start_args['default_path'], str):
-            raise TypeError("'default_path' start_arg/option must be of type str")
-        return self._static(self._start_args['default_path'])
-
+        try:
+            if not isinstance(self._start_args['default_path'], str):
+                raise TypeError("'default_path' start_arg/option must be of type str")
+            return self._static(self._start_args['default_path'])
+        except Exception as e:
+            result = Response(f"(_root) Internal Server Error: {e}", status=500)
+            sys.exit(1)
+        return result
 
     async def _static(self, path: str) -> btl.Response:
         ic(f"_static: {path}")
-        response = None
-        if 'jinja_env' in self._start_args and 'jinja_templates' in self._start_args:
-            if not isinstance(self._start_args['jinja_templates'], str):
-                raise TypeError("'jinja_templates' start_arg/option must be of type str")
-            template_prefix = self._start_args['jinja_templates'] + '/'
-            if path.startswith(template_prefix):
-                n = len(template_prefix)
-                template = self._start_args['jinja_env'].get_template(path[n:])
-                response = btl.HTTPResponse(template.render())
+        try:
+            response = None
+            if 'jinja_env' in self._start_args and 'jinja_templates' in self._start_args:
+                if not isinstance(self._start_args['jinja_templates'], str):
+                    raise TypeError("'jinja_templates' start_arg/option must be of type str")
+                template_prefix = self._start_args['jinja_templates'] + '/'
+                if path.startswith(template_prefix):
+                    n = len(template_prefix)
+                    template = self._start_args['jinja_env'].get_template(path[n:])
+                    response = Response(template.render())#btl.HTTPResponse(template.render())
 
-        if response is None:
-            return await send_from_directory(self.root_path, path)
+            if response is None:
+                return await send_from_directory(self.root_path, path)
 
-        self._set_response_headers(response)
+            self._set_response_headers(response)
+        except Exception as e:
+            response = Response(f"(_static) Internal Server Error: {e}", status=500)
+            # sys.exit(1)
         return response
 
 
@@ -447,24 +477,24 @@ class AsyncEel:
         print(f"_websocket")
         print("_websocket: Current event loop:", id(asyncio.get_event_loop()))
         
-        ws = websocket._get_current_object()
-
-        for js_function in self._js_functions:
-            self._import_js_function(js_function)
-
-        # Get query param (like page)
-        page = websocket.args.get("page", "default")
-        if page not in self._mock_queue_done:
-            for call in self._mock_queue:
-                await self._repeated_send(ws, self._safe_json(call))
-            self._mock_queue_done.add(page)
-
-        self._websockets.append((page, ws))
-
-        if not self.wait_ws_started.done():
-            self.wait_ws_started.set_result(True)
-
         try:
+            ws = websocket._get_current_object()
+
+            for js_function in self._js_functions:
+                self._import_js_function(js_function)
+
+            # Get query param (like page)
+            page = websocket.args.get("page", "default")
+            if page not in self._mock_queue_done:
+                for call in self._mock_queue:
+                    await self._repeated_send(ws, self._safe_json(call))
+                self._mock_queue_done.add(page)
+
+            self._websockets.append((page, ws))
+
+            if not self.wait_ws_started.done():
+                self.wait_ws_started.set_result(True)
+
             while True:
                 msg = await websocket.receive()
                 if msg is not None:
@@ -689,7 +719,12 @@ class AsyncEel:
         sys.exit(0)
 
 
-    def _set_response_headers(self, response: btl.Response) -> None:
-        if self._start_args['disable_cache']:
+    # def _set_response_headers(self, response: btl.Response) -> None:
+        # if self._start_args['disable_cache']:
             # https://stackoverflow.com/a/24748094/280852
-            response.set_header('Cache-Control', 'no-store')
+            # response.set_header('Cache-Control', 'no-store')
+
+    def _set_response_headers(self, response: Response) -> None:
+        if self._start_args['disable_cache']:
+            response.headers['Cache-Control'] = 'no-store'
+
