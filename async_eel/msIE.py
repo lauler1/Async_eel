@@ -3,7 +3,7 @@ import subprocess as sps
 import sys
 from typing import List
 
-from aeel_types import OptionsDictT
+from .aeel_types import OptionsDictT
 
 name: str = 'MSIE'
 

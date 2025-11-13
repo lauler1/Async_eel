@@ -4,11 +4,11 @@ import webbrowser as wbr
 from typing import Union, List, Dict, Iterable, Optional
 from types import ModuleType
 
-from aeel_types import OptionsDictT
-import chrome as chm
-import electron as ele
-import edge as edge
-import msIE as ie
+from .aeel_types import OptionsDictT
+from . import chrome as chm
+from . import electron as ele
+from . import edge as edge
+from . import msIE as ie
 #import eel.firefox as ffx      TODO
 #import eel.safari as saf       TODO
 

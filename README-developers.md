@@ -6,13 +6,14 @@ In order to start developing with Eel you'll need to checkout the code, set up a
 
 ### Clone the repository
 ```bash
-git clone git@github.com:python-eel/Eel.git
+git clone https://github.com/lauler1/Async_eel
 ```
 
 ### (Recommended) Create a virtual environment
 It's recommended that you use virtual environments for this project. Your process for setting up a virutal environment will vary depending on OS and tool of choice, but might look something like this:
 
 ```bash
+cd <Async_eel/>                 # If not yet
 python3 -m venv venv
 source venv/bin/activate
 ```
@@ -23,29 +24,80 @@ source venv/bin/activate
 ### Install project requirements
 
 ```bash
+cd <Async_eel/>                 # If not yet
 pip3 install -r requirements.txt        # eel's 'prod' requirements
-pip3 install -r requirements-test.txt   # pytest and selenium
-pip3 install -r requirements-meta.txt   # tox 
+
 ```
-
-### (Recommended) Run Automated Tests
-Tox is configured to run tests against each major version we support (3.7+). In order to run Tox as configured, you will need to install multiple versions of Python. See the pinned minor versions in `.python-version` for recommendations.
-
-#### Tox Setup
-Our Tox configuration requires [Chrome](https://www.google.com/chrome) and [ChromeDriver](https://chromedriver.chromium.org/home). See each of those respective project pages for more information on setting each up.
-
-**Note**: Pay attention to the version of Chrome that is installed on your OS because you need to select the compatible ChromeDriver version.
-
-#### Running Tests
-
-To test Eel against a specific version of Python you have installed, e.g. Python 3.7 in this case, run:
+### Install for local use with PIP
 
 ```bash
-tox -e py36
+cd <Async_eel/>                 # If not yet
+pip install -e .
 ```
 
-To test Eel against all supported versions, run the following:
+## Call flow from Python to JS
 
-```bash
-tox
+<!--
+```plantuml
+@startuml
+|Python App|
+
+    start
+
+    :eel.my_js_func;
+    
+    |Python AsyncEel|
+
+    :_js_call;
+
+    :async _repeat_send; <<task>>
+    
+    fork
+    
+		:_call_return;
+    
+    fork again
+
+        |JS|
+
+        :eel._websocket.onmessage;
+        if(message.hasOwnProperty('call')) then (OK)
+        :call(eel._exposed_functions(message.name));
+        endif
+        
+        |Python AsyncEel|
+          
+        :async _websocket; <<task>>
+        :async _process_message;
+        
+        
+        if('return' in message) then (Yes)
+          :call(eel._exposed_functions(message.name));
+        
+            if(call_id in self._call_return_callbacks) then (Yes)
+                if(message['status'] == 'ok') then (Yes)
+                :call(callback);
+                else
+                :call(error_callback);
+                endif
+                stop
+            else
+            :_call_return_values[call_id] = message['value'];
+            endif
+        else
+          stop
+        endif
+    end fork
+
+|Python App|
+
+:res;
+
+stop
+
+@enduml
+
 ```
+-->
+
+![](./docs/call_python2js.png)

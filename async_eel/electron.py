@@ -5,7 +5,7 @@ import subprocess as sps
 from shutil import which
 from typing import List, Optional
 
-from aeel_types import OptionsDictT
+from .aeel_types import OptionsDictT
 
 name: str = 'Electron'
 

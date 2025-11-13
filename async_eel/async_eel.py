@@ -4,7 +4,7 @@ import traceback
 from io import open
 from typing import Union, Any, Dict, List, Set, Tuple, Optional, Callable
 from typing_extensions import Literal
-from aeel_types import OptionsDictT, WebSocketT
+from .aeel_types import OptionsDictT, WebSocketT
 import json as jsn
 try:
     import bottle_websocket as wbs
@@ -12,7 +12,7 @@ except ImportError:
     import bottle.ext.websocket as wbs
 import re as rgx
 import os
-import browsers as brw
+from . import browsers as brw
 import pyparsing as pp
 import random as rnd
 import sys
@@ -22,9 +22,9 @@ import mimetypes
 
 from quart import Quart, websocket, Response, send_from_directory
 import asyncio
-# from pprint import pprint
-from icecream import ic
-ic.configureOutput(prefix='async_eel| ')
+from icecream import IceCreamDebugger
+ic = IceCreamDebugger(prefix=f"async_eel|")
+# ic.configureOutput(prefix='async_eel| ')
 
 
 class AsyncEel:
@@ -194,6 +194,7 @@ class AsyncEel:
                 except UnicodeDecodeError:
                     pass    # Malformed file probably
 
+        ic(js_functions)
         self._js_functions = list(js_functions)
         for js_function in self._js_functions:
             self._mock_js_function(js_function)
@@ -455,7 +456,7 @@ class AsyncEel:
         page = websocket.args.get("page", "default")
         if page not in self._mock_queue_done:
             for call in self._mock_queue:
-                _self.repeated_send(ws, self._safe_json(call))
+                await self._repeated_send(ws, self._safe_json(call))
             self._mock_queue_done.add(page)
 
         self._websockets.append((page, ws))
@@ -527,7 +528,7 @@ class AsyncEel:
             try:
                 callback = self._exposed_functions[rcv_message['name']]
                 if asyncio.iscoroutinefunction(callback):
-                    return_val = callback(*rcv_message['args'])
+                    return_val = await callback(*rcv_message['args'])
                 else:
                     return_val = callback(*rcv_message['args'])
                 status = 'ok'
@@ -573,10 +574,17 @@ class AsyncEel:
 
     def _mock_js_function(self, js_function: str) -> None:
         ic(js_function)
-        exec('%s = lambda *args: _mock_call("%s", args)' % (js_function, js_function), globals())
+        # exec('%s = lambda *args: _mock_call("%s", args)' % (js_function, js_function), globals())
+        # Create a function dynamically
+        def dynamic_func(*args):
+            return self._mock_call(js_function, args)
+        
+        # Attach it to the instance
+        setattr(self, js_function, dynamic_func)
+        
 
     def _import_js_function(self, f: str):
-        # Create an async function dynamically
+        # Create a function dynamically
         def dynamic_func(*args):
             return self._js_call(f, args)
             
@@ -590,7 +598,7 @@ class AsyncEel:
         return {'call': call_id, 'name': name, 'args': args}
 
 
-    async def _mock_call(self, name: str, args: Any) -> Callable[[Optional[Callable[..., Any]], Optional[Callable[..., Any]]], Any]:
+    def _mock_call(self, name: str, args: Any) -> Callable[[Optional[Callable[..., Any]], Optional[Callable[..., Any]]], Any]:
         ic(f"_mock_call: {name}, {args}")
         call_object = self._call_object(name, args)
         self._mock_queue += [call_object]

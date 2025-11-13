@@ -1,9 +1,7 @@
 import random, os, sys, asyncio
 from icecream import ic
 
-lib_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../async_eel'))
-sys.path.insert(0, lib_path)
-from async_eel import AsyncEel
+from async_eel.async_eel import AsyncEel
 
 # ic.configureOutput(prefix='sync_callbacks| ')
 

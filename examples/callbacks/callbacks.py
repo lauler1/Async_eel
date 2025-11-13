@@ -1,11 +1,10 @@
 import random, os, sys, asyncio
-from icecream import ic
+from icecream import IceCreamDebugger
+ic = IceCreamDebugger(prefix=f"callbacks|")
 
-lib_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../async_eel'))
-sys.path.insert(0, lib_path)
-from async_eel import AsyncEel
+from async_eel.async_eel import AsyncEel
 
-print("------------------------------------------------------------------------------------------------")
+ic("------------------------------------------------------------------------------------------------")
 eel = AsyncEel()
 eel.init('web')
 

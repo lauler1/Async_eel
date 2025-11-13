@@ -4,7 +4,7 @@ import os
 import subprocess as sps
 from shutil import which
 from typing import List, Optional
-from aeel_types import OptionsDictT
+from .aeel_types import OptionsDictT
 
 # Every browser specific module must define run(), find_path() and name like this
 
