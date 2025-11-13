@@ -11,8 +11,11 @@ print("-------------------------------------------------------------------------
 eel = AsyncEel()
 eel.init('web')
 
-def close_callback(page, sockets):
-    print(f"close_callback({page}, {sockets})")
+async def close_callback(page, sockets):
+    """
+    Optional callback for websocket close
+    """
+    print(f"close_callback({page}, {sockets}): websocket is closed")
     
 @eel.expose
 def py_random():
@@ -23,8 +26,11 @@ def py_random():
 async def main():
 
     await eel.start('sync_callbacks.html', size=(400, 300), close_callback=close_callback)
+    
+    print("Main: Current event loop:", id(asyncio.get_event_loop()))
 
-    await asyncio.sleep(2)
+    await eel.wait_ws_started # Wait till Websocket is up and running.
+    
     n = await eel.js_random()()
     print('Got this from Javascript:', n)
 

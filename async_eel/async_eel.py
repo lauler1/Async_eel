@@ -5,9 +5,7 @@ from io import open
 from typing import Union, Any, Dict, List, Set, Tuple, Optional, Callable
 from typing_extensions import Literal
 from aeel_types import OptionsDictT, WebSocketT
-# import gevent as gvt
 import json as jsn
-# import bottle as btl
 try:
     import bottle_websocket as wbs
 except ImportError:
@@ -52,6 +50,8 @@ class AsyncEel:
         self.app: Quart = Quart(__name__)
         # self._shutdown: Optional[gvt.Greenlet] = None    # Later assigned as global by _websocket_close()
         self.root_path: str                              # Later assigned as global by init()
+        self.wait_ws_started = None # Initialized in start(). Just informs other tasks that websoket is up and running.
+
 
         # The maximum time (in milliseconds) that Python will try to retrieve a return value for functions executing in JS
         # Can be overridden through `eel.init` with the kwarg `js_result_timeout` (default: 10000)
@@ -130,7 +130,6 @@ class AsyncEel:
             Alice said hello from the JavaScript world!
 
         '''
-        # ic(f"expose: {name_or_function}")
 
         # Deal with '@eel.expose()' - treat as '@eel.expose'
         if name_or_function is None:
@@ -173,7 +172,6 @@ class AsyncEel:
         init_args = (path, allowed_extensions, js_result_timeout)
         ic(init_args)
         
-        # global root_path, _js_functions, _js_result_timeout
         self.root_path = self._get_real_path(path)
 
         js_functions = set()
@@ -292,7 +290,6 @@ class AsyncEel:
             users of breaking API change for v1.0.0. Set to `True` to suppress
             the error message.
         '''
-        # ic(start_urls)
         self._start_args.update({
             'mode': mode,
             'host': host,
@@ -313,6 +310,8 @@ class AsyncEel:
             'suppress_error': suppress_error,
         })
         ic(self._start_args)
+        self.wait_ws_started = asyncio.Future() # Can only be used after start() is called.
+
 
         if self._start_args['port'] == 0:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -341,7 +340,6 @@ class AsyncEel:
         # Launch the browser to the starting URLs
         self.show(*start_urls)
 
-        # def run_lambda() -> None:
         if self._start_args['all_interfaces'] is True:
             HOST = '0.0.0.0'
         else:
@@ -356,16 +354,15 @@ class AsyncEel:
         else:
             self.register_eel_routes(btl.default_app())
 
+        print("start: Current event loop:", id(asyncio.get_event_loop()))
         await app.startup()
-
-        task = asyncio.create_task(
+        asyncio.create_task(
             self.app.run_task(
                 host=HOST,
                 port=self._start_args['port'],
             )
-        )
-        
-        return True
+        )  # Non-blocking
+
 
 
     def show(self, *start_urls: str) -> None:
@@ -404,46 +401,9 @@ class AsyncEel:
         brw.open(list(start_urls), self._start_args)
 
 
-    # def sleep(self, seconds: Union[int, float]) -> None:
-        # '''A non-blocking sleep call compatible with the Gevent event loop.
-
-        # .. note::
-            # While this function simply wraps :func:`gevent.sleep()`, it is better
-            # to call :func:`eel.sleep()` in your eel app, as this will ensure future
-            # compatibility in case the implementation of Eel should change in some
-            # respect.
-
-        # :param seconds: The number of seconds to sleep.
-        # '''
-        # self.gvt.sleep(seconds)
-
-
-    # def spawn(self, function: Callable[..., Any], *args: Any, **kwargs: Any) -> gvt.Greenlet:
-        # '''Spawn a new Greenlet.
-
-        # Calling this function will spawn a new :class:`gevent.Greenlet` running
-        # *function* asynchronously.
-
-        # .. caution::
-            # If you spawn your own Greenlets to run in addition to those spawned by
-            # Eel's internal core functionality, you will have to ensure that those
-            # Greenlets will terminate as appropriate (either by returning or by
-            # being killed via Gevent's kill mechanism), otherwise your app may not
-            # terminate correctly when Eel itself terminates.
-
-        # :param function: The function to be called and run as the Greenlet.
-        # :param *args: Any positional arguments that should be passed to *function*.
-        # :param **kwargs: Any key-word arguments that should be passed to
-            # *function*.
-        # '''
-        # return gvt.spawn(function, *args, **kwargs)
-
-
-    # Bottle Routes
-
 
     async def _eel(self) -> str:
-        # ic(f"_eel")
+
         start_geometry = {'default': {'size': self._start_args['size'],
                                       'position': self._start_args['position']},
                           'pages':   self._start_args['geometry']}
@@ -452,14 +412,11 @@ class AsyncEel:
                                '_py_functions: %s,' % list(self._exposed_functions.keys()))
         page = page.replace('/** _start_geometry **/',
                             '_start_geometry: %s,' % self._safe_json(start_geometry))
-        # btl.response.content_type = 'application/javascript'
-        # self._set_response_headers(btl.response)
-        # return page
+
         return Response(page, mimetype="application/javascript")
 
 
     async def _root(self) -> btl.Response:
-        # ic(f"_root")
         if not isinstance(self._start_args['default_path'], str):
             raise TypeError("'default_path' start_arg/option must be of type str")
         return self._static(self._start_args['default_path'])
@@ -478,7 +435,6 @@ class AsyncEel:
                 response = btl.HTTPResponse(template.render())
 
         if response is None:
-            # response = btl.static_file(path, root=self.root_path)
             return await send_from_directory(self.root_path, path)
 
         self._set_response_headers(response)
@@ -488,6 +444,7 @@ class AsyncEel:
     async def _websocket(self) -> None:
         print("\n############################################################")
         print(f"_websocket")
+        print("_websocket: Current event loop:", id(asyncio.get_event_loop()))
         
         ws = websocket._get_current_object()
 
@@ -496,7 +453,6 @@ class AsyncEel:
 
         # Get query param (like page)
         page = websocket.args.get("page", "default")
-        # page = btl.request.query.page
         if page not in self._mock_queue_done:
             for call in self._mock_queue:
                 _self.repeated_send(ws, self._safe_json(call))
@@ -504,13 +460,14 @@ class AsyncEel:
 
         self._websockets.append((page, ws))
 
+        if not self.wait_ws_started.done():
+            self.wait_ws_started.set_result(True)
+
         try:
             while True:
                 msg = await websocket.receive()
-                # print(f"_websocket receive = {msg}")
                 if msg is not None:
                     message = jsn.loads(msg)
-                    # spawn(self._process_message, message, ws)
                     await self._process_message(message, ws)
                 else:
                     self._websockets.remove((page, ws))
@@ -520,7 +477,6 @@ class AsyncEel:
         finally:
             self._websockets.remove((page, websocket._get_current_object()))
             await self._websocket_close(page)
-            # self._websocket_close(page)
 
 
     def register_eel_routes(self, app: Quart) -> None:
@@ -549,11 +505,7 @@ class AsyncEel:
             app.add_url_rule(add_route_path, view_func=route_func, **route_kwargs)
 
 
-    # Private functions
-
-
     def _safe_json(self, obj: Any) -> str:
-        # print(f"_safe_json: {obj}")
         return jsn.dumps(obj, default=lambda o: None)
 
 
@@ -570,10 +522,14 @@ class AsyncEel:
     async def _process_message(self, rcv_message: Dict[str, Any], ws: Websocket) -> None:
         ic(rcv_message)
         if 'call' in rcv_message:
-            # print(f"  _process_rcv_message: call")
+
             error_info = {}
             try:
-                return_val = self._exposed_functions[rcv_message['name']](*rcv_message['args'])
+                callback = self._exposed_functions[rcv_message['name']]
+                if asyncio.iscoroutinefunction(callback):
+                    return_val = callback(*rcv_message['args'])
+                else:
+                    return_val = callback(*rcv_message['args'])
                 status = 'ok'
             except Exception as e:
                 err_traceback = traceback.format_exc()
@@ -587,18 +543,21 @@ class AsyncEel:
                                             'value': return_val,
                                             'error': error_info,}))
         elif 'return' in rcv_message:
-            # print(f"  _process_rcv_message: return")
             call_id = rcv_message['return']
             if call_id in self._call_return_callbacks:
-                # print(f"    _process_rcv_message: call_id in self._call_return_callbacks")
                 callback, error_callback = self._call_return_callbacks.pop(call_id)
-                # print(f"    _process_rcv_message: call_id in self._call_return_callbacks, callback={callback}, error_callback={error_callback}")
+
                 if rcv_message['status'] == 'ok':
-                    callback(rcv_message['value'])
+                    if asyncio.iscoroutinefunction(callback):
+                        await callback(rcv_message['value'])
+                    else:
+                        callback(rcv_message['value'])
                 elif rcv_message['status'] == 'error' and error_callback is not None:
-                    error_callback(rcv_message['error'], rcv_message['stack'])
+                    if asyncio.iscoroutinefunction(callback):
+                        await error_callback(rcv_message['error'], rcv_message['stack'])
+                    else:
+                        error_callback(rcv_message['error'], rcv_message['stack'])
             else:
-                # print(f"    _process_rcv_message: self._call_return_values[call_id] = rcv_message['value']")
                 self._call_return_values[call_id] = rcv_message['value']
 
         else:
@@ -606,7 +565,6 @@ class AsyncEel:
 
 
     def _get_real_path(self, path: str) -> str:
-        # ic(f"_get_real_path: {path}")
         if getattr(sys, 'frozen', False):
             return os.path.join(sys._MEIPASS, path)  # type: ignore # sys._MEIPASS is dynamically added by PyInstaller
         else:
@@ -618,10 +576,8 @@ class AsyncEel:
         exec('%s = lambda *args: _mock_call("%s", args)' % (js_function, js_function), globals())
 
     def _import_js_function(self, f: str):
-        # ic(f"_import_js_function: {f}")
         # Create an async function dynamically
         def dynamic_func(*args):
-            # ic(f"dynamic_func: {args}")
             return self._js_call(f, args)
             
         # Attach it to the instance
@@ -629,7 +585,6 @@ class AsyncEel:
 
 
     def _call_object(self, name: str, args: Any) -> Dict[str, Any]:
-        # ic(f"_call_object: {name}, {args}")
         self._call_number += 1
         call_id = self._call_number + rnd.random()
         return {'call': call_id, 'name': name, 'args': args}
@@ -648,22 +603,48 @@ class AsyncEel:
             asyncio.create_task(self._repeated_send(ws, self._safe_json(call_object)))
         return self._call_return(call_object)
 
+    class CallAnswer:
+        def __init__(self, eel: AsyncEel, call_id):
+            self.eel = eel
+            self.call_id = call_id
+    
+        def then_call(self, callback, error_callback = None):
+            self.eel._call_return_callbacks[self.call_id] = (callback, error_callback)
+        
+        async def wait_answer(self):
+            for w in range(self.eel._js_result_timeout):
+                if self.call_id in self.eel._call_return_values:
+                    return self.eel._call_return_values.pop(self.call_id)
+                await asyncio.sleep(0.001)
+            return None
+
+
+        async def __call__(self, callback = None, error_callback = None):
+            if callback is not None:
+                self.eel._call_return_callbacks[self.call_id] = (callback, error_callback)
+            else:
+                for w in range(self.eel._js_result_timeout):
+                    if self.call_id in self.eel._call_return_values:
+                        return self.eel._call_return_values.pop(self.call_id)
+                    await asyncio.sleep(0.001)
+
+
     def _call_return(self, call: Dict[str, Any]) -> Callable[[Optional[Callable[..., Any]], Optional[Callable[..., Any]]], Any]:
         ic(call)
         call_id = call['call']
 
-        loop = asyncio.get_running_loop()
-        async def return_func(callback: Optional[Callable[..., Any]] = None,
-                        error_callback: Optional[Callable[..., Any]] = None) -> Any:
+        # async def return_func(callback: Optional[Callable[..., Any]] = None,
+                        # error_callback: Optional[Callable[..., Any]] = None) -> Any:
 
-            if callback is not None:
-                self._call_return_callbacks[call_id] = (callback, error_callback)
-            else:
-                for w in range(self._js_result_timeout):
-                    if call_id in self._call_return_values:
-                        return self._call_return_values.pop(call_id)
-                    await asyncio.sleep(0.001)
-        return return_func
+            # if callback is not None:
+                # self._call_return_callbacks[call_id] = (callback, error_callback)
+            # else:
+                # for w in range(self._js_result_timeout):
+                    # if call_id in self._call_return_values:
+                        # return self._call_return_values.pop(call_id)
+                    # await asyncio.sleep(0.001)
+        # return return_func
+        return AsyncEel.CallAnswer(self, call_id)
 
 
     def _expose(self, expose_name: str, function: Callable[..., Any]) -> None:
@@ -691,17 +672,16 @@ class AsyncEel:
             if not callable(close_callback):
                 raise TypeError("'close_callback' start_arg/option must be callable or None")
             sockets = [p for _, p in self._websockets]
-            close_callback(page, sockets)
-        # else:
-            # if isinstance(self._shutdown, gvt.Greenlet):
-                # self._shutdown.kill()
 
-            # self._shutdown = gvt.spawn_later(_start_args['shutdown_delay'], _detect_shutdown)
-        quit()
+            if asyncio.iscoroutinefunction(close_callback):
+                await close_callback(page, sockets)
+            else:
+                close_callback(page, sockets)
+            
+        sys.exit(0)
 
 
     def _set_response_headers(self, response: btl.Response) -> None:
-        # ic(f"_set_response_headers: {response}")
         if self._start_args['disable_cache']:
             # https://stackoverflow.com/a/24748094/280852
             response.set_header('Cache-Control', 'no-store')
