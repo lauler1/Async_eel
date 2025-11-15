@@ -12,6 +12,10 @@ from . import msIE as ie
 #import eel.firefox as ffx      TODO
 #import eel.safari as saf       TODO
 
+from . import ic_instances
+ic = ic_instances.create_ic(prefix=f"browser|")
+# ic = IceCreamDebugger(prefix=f"browser|")
+
 _browser_paths: Dict[str, str] = {}
 _browser_modules: Dict[str, ModuleType] = {'chrome':   chm,
                                            'electron': ele,
@@ -52,7 +56,8 @@ def _build_urls(start_pages: Iterable[Union[str, Dict[str, str]]], options: Opti
 def open(start_pages: Iterable[Union[str, Dict[str, str]]], options: OptionsDictT) -> None:
     # Build full URLs for starting pages (including host and port)
     start_urls = _build_urls(start_pages, options)
-    
+    ic(start_urls)    
+    ic(options['cmdline_args'])    
     mode = options.get('mode')
     if not isinstance(mode, (str, type(None))) and mode is not False:
         raise TypeError("'mode' option must by either a string, False, or None")

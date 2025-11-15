@@ -4,21 +4,17 @@ ic = IceCreamDebugger(prefix=f"callbacks|")
 
 from async_eel.async_eel import AsyncEel
 
-ic("------------------------------------------------------------------------------------------------")
-eel = AsyncEel()
-eel.init('web')
-
 async def close_callback(page, sockets):
     """
     Optional callback for websocket close
     """
     print(f"close_callback({page}, {sockets}): websocket is closed")
 
-@eel.expose
+@AsyncEel.expose
 async def py_random():
     return random.random()
 
-@eel.expose
+@AsyncEel.expose
 async def py_exception(error):
     print(f"py_exception({error})")
     if error:
@@ -37,6 +33,9 @@ async def print_num_failed(error, stack):
     print("\tStack: ", stack)
 
 async def main():
+    ic("------------------------------------------------------------------------------------------------")
+    eel = AsyncEel()
+    eel.init('web')
 
     await eel.start('callbacks.html', size=(400, 300), close_callback=close_callback)
     await eel.wait_ws_started # Wait till Websocket is up and running.
@@ -45,6 +44,7 @@ async def main():
     eel.js_random().then_call(print_num)
 
     result = await eel.js_random().wait_answer()
+
     print(f"result -", result)
 
     # Do the same with an inline callback

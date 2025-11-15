@@ -5,15 +5,19 @@ import subprocess as sps
 from shutil import which
 from typing import List, Optional
 from .aeel_types import OptionsDictT
-
+from . import ic_instances
+ic = ic_instances.create_ic(prefix=f"chrome|")
+# ic = IceCreamDebugger(prefix=f"chrome|")
 # Every browser specific module must define run(), find_path() and name like this
 
 name: str = 'Google Chrome/Chromium'
 
 def run(path: str, options: OptionsDictT, start_urls: List[str]) -> None:
+
     if not isinstance(options['cmdline_args'], list):
         raise TypeError("'cmdline_args' option must be of type List[str]")
     if options['app_mode']:
+        ic(options['app_mode'])
         for url in start_urls:
             sps.Popen([path, '--app=%s' % url] +
                        options['cmdline_args'],

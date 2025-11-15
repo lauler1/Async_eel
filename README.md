@@ -81,7 +81,7 @@ Examples:
 async def close_callback(page, sockets):
     print(f"close_callback({page}, {sockets}): websocket is closed")
 
-@eel.expose
+@AsyncEel.expose
 async def py_random():
     return random.random()
 
@@ -95,7 +95,7 @@ The above `async` functions work the same as these synchronous examples:
 def close_callback(page, sockets):
     print(f"close_callback({page}, {sockets}): websocket is closed")
 
-@eel.expose
+@AsyncEel.expose
 def py_random():
     return random.random()
 
@@ -103,5 +103,11 @@ def print_num(n):
     print('print_num: Got this from JavaScript:', n)
 ```
 
+### **Exposing object methods**
 
+The `@AsyncEel.expose` may be not always an option, you can expose object methods from inside the instance with.
+
+```python
+self.my_function = AsyncEel.expose(self.my_function)
+```
 

@@ -35,6 +35,18 @@ cd <Async_eel/>                 # If not yet
 pip install -e .
 ```
 
+### Enabling IceCream outputs.
+
+In order to enable the IceCream debug outputs to the console, use:
+
+```python
+from async_eel.async_eel import ic_instances
+ic_instances.enable_all()
+#or
+ic_instances.disable_all()
+```
+By default they are disabled.
+
 ## Call flow from Python to JS
 
 <!--

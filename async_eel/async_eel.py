@@ -6,10 +6,6 @@ from typing import Union, Any, Dict, List, Set, Tuple, Optional, Callable
 from typing_extensions import Literal
 from .aeel_types import OptionsDictT, WebSocketT
 import json as jsn
-# try:
-    # import bottle_websocket as wbs
-# except ImportError:
-    # import bottle.ext.websocket as wbs
 import re as rgx
 import os
 from . import browsers as brw
@@ -20,16 +16,26 @@ import importlib_resources
 import socket
 import mimetypes
 
-from quart import Quart, websocket, Response, send_from_directory
+# from quart import Quart, websocket, Response, send_from_directory
+from aiohttp import web
+import aiofiles
 import asyncio
 import signal
-from icecream import IceCreamDebugger
-ic = IceCreamDebugger(prefix=f"async_eel|")
-# ic.configureOutput(prefix='async_eel| ')
+
+from . import ic_instances
+ic = ic_instances.create_ic(prefix=f"async_eel|")
+ic_instances.disable_all()
+
 import logging
 
-class AsyncEel:
+def shutdown(signum, frame):
+    print(f"Signal {signum} received! Exiting...")
+    sys.exit(0)
 
+class AsyncEel:
+    
+    _exposed_functions: Dict[Any, Any] = {} # Expose at class level instead of instance level.
+    
     def __init__(self):
         mimetypes.add_type('application/javascript', '.js')
 
@@ -44,15 +50,15 @@ class AsyncEel:
         self._call_return_values: Dict[Any, Any] = {}
         self._call_return_callbacks: Dict[float, Tuple[Callable[..., Any], Optional[Callable[..., Any]]]] = {}
         self._call_number: int = 0
-        self._exposed_functions: Dict[Any, Any] = {}
+        
         self._js_functions: List[Any] = []
         self._mock_queue: List[Any] = []
         self._mock_queue_done: Set[Any] = set()
-        self.app: Quart = Quart(__name__)
+        self.app: web.Application = web.Application()#Quart(__name__)
         # self._shutdown: Optional[gvt.Greenlet] = None    # Later assigned as global by _websocket_close()
         self.root_path: str                              # Later assigned as global by init()
         self.wait_ws_started = None # Initialized in start(). Just informs other tasks that websoket is up and running.
-
+        self.runner = None
 
         # The maximum time (in milliseconds) that Python will try to retrieve a return value for functions executing in JS
         # Can be overridden through `eel.init` with the kwarg `js_result_timeout` (default: 10000)
@@ -86,17 +92,17 @@ class AsyncEel:
         )
 
         self.BOTTLE_ROUTES: Dict[str, Tuple[Callable[..., Any], Dict[Any, Any]]] = {
-            "/eel": (self._websocket, dict(websocket=True)),
+            "/eel": (self._websocket, dict()),
             "/eel.js": (self._eel, dict()),
             "/": (self._root, dict()),
-            "/<path:path>": (self._static, dict()),
+            "/{path:.*}": (self._static, dict()) # "/<path:path>": (self._static, dict()),
         }
     
     # ===============================================================================================
-
-
     # Public methods
-    def expose(self, name_or_function: Optional[Callable[..., Any]] = None) -> Callable[..., Any]:
+    
+    @classmethod
+    def expose(cls, name_or_function: Optional[Callable[..., Any]] = None) -> Callable[..., Any]:
         '''Decorator to expose Python callables via Eel's JavaScript API.
 
         When an exposed function is called, a callback function can be passed
@@ -140,12 +146,12 @@ class AsyncEel:
             name = name_or_function
 
             def decorator(function: Callable[..., Any]) -> Any:
-                self._expose(name, function)
+                cls._expose(name, function)
                 return function
             return decorator
         else:
             function = name_or_function
-            self._expose(function.__name__, function)
+            cls._expose(function.__name__, function)
             return function
 
     def init(self, 
@@ -209,7 +215,7 @@ class AsyncEel:
             host: str = '127.0.0.1',
             port: int = 8000,
             jinja_templates: Optional[str] = None,
-            cmdline_args: List[str] = ['--disable-http-cache'],
+            cmdline_args: List[str] = ['--disable-http-cache', '--disable-features=DevToolsAutoWorkspace'],
             size: Optional[Tuple[int, int]] = None,
             position: Optional[Tuple[int, int]] = None,
             geometry: Dict[str, Tuple[int, int]] = {},
@@ -218,7 +224,7 @@ class AsyncEel:
             all_interfaces: bool = False,
             disable_cache: bool = True,
             default_path: str = 'index.html',
-            app: Quart = Quart(__name__), # btl.default_app(),
+            app: web.Application = web.Application(), # btl.default_app(),
             shutdown_delay: float = 1.0,
             suppress_error: bool = False) -> bool:
         '''Start the Eel app.
@@ -277,7 +283,7 @@ class AsyncEel:
         :param disable_cache: Sets the no-store response header when serving
             assets.
         :param default_path: The default file to retrieve for the root URL.
-        :param app: An instance of :class:`Quart` which will be used rather
+        :param app: An instance of :class:`aiohttp web.Application()` which will be used rather
             than creating a fresh one. This can be used to install middleware on
             the instance before starting Eel, e.g. for session management,
             authentication, etc. If *app* is not a :class:`bottle.Bottle` instance,
@@ -314,12 +320,6 @@ class AsyncEel:
         ic(self._start_args)
         self.wait_ws_started = asyncio.Future() # Can only be used after start() is called.
 
-
-        # # Handle Ctrl+C
-        # loop = asyncio.get_event_loop()
-        # for sig in (signal.SIGINT, signal.SIGTERM):
-            # loop.add_signal_handler(sig, loop.stop)
-
         if self._start_args['port'] == 0:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.bind(('localhost', 0))
@@ -343,7 +343,6 @@ class AsyncEel:
                 'got a {}'.format(type(self._start_args['shutdown_delay']))
             )
 
-
         # Launch the browser to the starting URLs
         self.show(*start_urls)
 
@@ -356,34 +355,23 @@ class AsyncEel:
 
         self.app = self._start_args['app']
 
-        if isinstance(app, Quart):
-            self.register_eel_routes(app)
+        if isinstance(self.app, web.Application):
+            self.register_eel_routes(self.app)
         else:
-            self.register_eel_routes(btl.default_app())
+            # self.register_eel_routes(btl.default_app())
+            raise Exception("Wrong server app type")
 
-        # print("start: Current event loop:", id(asyncio.get_event_loop()))
-        await app.startup()
-        # asyncio.create_task(
-            # self.app.run_task(
-                # host=HOST,
-                # port=self._start_args['port'],
-            # )
-        # )  # Non-blocking
-        await self.app.run_task(
-                host=HOST,
-                port=self._start_args['port'],
-            )
+        self.runner = web.AppRunner(self.app)
+        await self.runner.setup()
 
-        async def handle_exception(e):
-            self.app.logger.error(f"Unhandled exception: {e}")
-            sys.exit(1)
+        # Bind to host/port
+        site = web.TCPSite(self.runner, host=HOST, port=self._start_args['port'])
+        await site.start()
+            
 
-        self.app.errorhandler(Exception)(handle_exception)
-        self.app.logger.setLevel(logging.DEBUG)
-
-        # loop = asyncio.get_event_loop()
-        # for sig in (signal.SIGINT, signal.SIGTERM):
-            # loop.add_signal_handler(sig, loop.stop)
+        # Register custom signal handler with asyncio to exit
+        signal.signal(signal.SIGINT, shutdown)   # Ctrl+C
+        signal.signal(signal.SIGBREAK, shutdown) # Ctrl+Break
 
     def show(self, *start_urls: str) -> None:
         ic(start_urls)
@@ -421,37 +409,41 @@ class AsyncEel:
         brw.open(list(start_urls), self._start_args)
 
 
-
-    async def _eel(self) -> str:
+    async def _eel(self, *args, **kargs) -> str:
+        # print(f"_eel: {args}, {kargs}")
         try:
             start_geometry = {'default': {'size': self._start_args['size'],
                                           'position': self._start_args['position']},
                               'pages':   self._start_args['geometry']}
 
             page = self._eel_js.replace('/** _py_functions **/',
-                                   '_py_functions: %s,' % list(self._exposed_functions.keys()))
+                                   '_py_functions: %s,' % list(self.__class__._exposed_functions.keys()))
             page = page.replace('/** _start_geometry **/',
                                 '_start_geometry: %s,' % self._safe_json(start_geometry))
-            result = Response(page, mimetype="application/javascript")
+            result = web.Response(text=page, content_type="application/javascript")
         except Exception as e:
-            result = Response(f"(_eel) Internal Server Error: {e}", status=500)
+            result = web.Response(text=f"(_eel) Internal Server Error: {e}", status=500)
             sys.exit(1)
         return result
 
 
-    async def _root(self) -> btl.Response:
+    async def _root(self, *args, **kargs):
         try:
             if not isinstance(self._start_args['default_path'], str):
                 raise TypeError("'default_path' start_arg/option must be of type str")
-            return self._static(self._start_args['default_path'])
+            return self._static(path=self._start_args['default_path'])
         except Exception as e:
-            result = Response(f"(_root) Internal Server Error: {e}", status=500)
+            result = web.Response(text=f"(_root) Internal Server Error: {e}", status=500)
             sys.exit(1)
         return result
 
-    async def _static(self, path: str) -> btl.Response:
-        ic(f"_static: {path}")
+    # async def _static(self, path: str):
+    async def _static(self, request, path=None):
+        if path == None:
+            path = request.match_info['path']
+        ic(f"_static: {path}, {request}")
         try:
+            mime_type, _ = mimetypes.guess_type(path)
             response = None
             if 'jinja_env' in self._start_args and 'jinja_templates' in self._start_args:
                 if not isinstance(self._start_args['jinja_templates'], str):
@@ -460,31 +452,38 @@ class AsyncEel:
                 if path.startswith(template_prefix):
                     n = len(template_prefix)
                     template = self._start_args['jinja_env'].get_template(path[n:])
-                    response = Response(template.render())#btl.HTTPResponse(template.render())
+                    response = web.Response(body=template.render(), content_type=mime_type or "application/octet-stream")#btl.HTTPResponse(template.render())
 
             if response is None:
-                return await send_from_directory(self.root_path, path)
+                # return await send_from_directory(self.root_path, path)
+                full_path = os.path.join(self.root_path, path)
+                # Serve raw file
+                async with aiofiles.open(full_path, mode='rb') as f:
+                    data = await f.read()
+                return web.Response(body=data, content_type=mime_type or "application/octet-stream")
 
             self._set_response_headers(response)
         except Exception as e:
-            response = Response(f"(_static) Internal Server Error: {e}", status=500)
+            print(f"_static Exception = {e}")
+            traceback.print_exc()  # Prints the full stack trace to stderr
+            response = web.Response(text=f"(_static) Internal Server Error: {e}", status=500)
             # sys.exit(1)
         return response
 
-
-    async def _websocket(self) -> None:
-        print("\n############################################################")
-        print(f"_websocket")
-        print("_websocket: Current event loop:", id(asyncio.get_event_loop()))
+    async def _websocket(self, request: web.Request) -> None:
+        websocket_loop_id = id(asyncio.get_event_loop)
+        ic(websocket_loop_id)
         
         try:
-            ws = websocket._get_current_object()
+            # ws = websocket._get_current_object()
+            ws = web.WebSocketResponse()
+            await ws.prepare(request)
 
             for js_function in self._js_functions:
                 self._import_js_function(js_function)
 
             # Get query param (like page)
-            page = websocket.args.get("page", "default")
+            page = request.query.get("page", "default")
             if page not in self._mock_queue_done:
                 for call in self._mock_queue:
                     await self._repeated_send(ws, self._safe_json(call))
@@ -495,22 +494,22 @@ class AsyncEel:
             if not self.wait_ws_started.done():
                 self.wait_ws_started.set_result(True)
 
-            while True:
-                msg = await websocket.receive()
-                if msg is not None:
-                    message = jsn.loads(msg)
+            async for msg in ws:
+                if msg.type == web.WSMsgType.TEXT:
+                    # await ws.send_str(f"Echo: {msg.data}")
+                    message = jsn.loads(msg.data)
                     await self._process_message(message, ws)
-                else:
+                elif msg.type == web.WSMsgType.ERROR:
                     self._websockets.remove((page, ws))
                     break
         except Exception as e:
             print(f"_websocket Exception = {e}")
+            # traceback.print_exc()  # Prints the full stack trace to stderr
         finally:
-            self._websockets.remove((page, websocket._get_current_object()))
+            self._websockets.remove((page, ws))
             await self._websocket_close(page)
 
-
-    def register_eel_routes(self, app: Quart) -> None:
+    def register_eel_routes(self, app: web.Application) -> None:
         # print(f"register_eel_routes:")
         '''Register the required eel routes with `app`.
 
@@ -524,7 +523,7 @@ class AsyncEel:
 
         :Example:
 
-            >>> app = Quart()
+            >>> app = web.Application()
             >>> eel.register_eel_routes(app)
             >>> middleware = beaker.middleware.SessionMiddleware(app)
             >>> eel.start(app=middleware)
@@ -533,7 +532,7 @@ class AsyncEel:
         for add_route_path, route_params in self.BOTTLE_ROUTES.items():
             route_func, route_kwargs = route_params
             ic(add_route_path)
-            app.add_url_rule(add_route_path, view_func=route_func, **route_kwargs)
+            app.router.add_get(add_route_path, route_func, **route_kwargs)
 
 
     def _safe_json(self, obj: Any) -> str:
@@ -544,7 +543,7 @@ class AsyncEel:
         # print(f"_repeated_send: {msg}")
         for attempt in range(100):
             try:
-                await ws.send(msg)
+                await ws.send_str(msg)
                 break
             except Exception:
                 await asyncio.sleep(0.001)
@@ -552,11 +551,11 @@ class AsyncEel:
 
     async def _process_message(self, rcv_message: Dict[str, Any], ws: Websocket) -> None:
         ic(rcv_message)
-        if 'call' in rcv_message:
 
+        if 'call' in rcv_message:
             error_info = {}
             try:
-                callback = self._exposed_functions[rcv_message['name']]
+                callback = self.__class__._exposed_functions[rcv_message['name']]
                 if asyncio.iscoroutinefunction(callback):
                     return_val = await callback(*rcv_message['args'])
                 else:
@@ -684,12 +683,12 @@ class AsyncEel:
         # return return_func
         return AsyncEel.CallAnswer(self, call_id)
 
-
-    def _expose(self, expose_name: str, function: Callable[..., Any]) -> None:
+    @classmethod
+    def _expose(cls, expose_name: str, function: Callable[..., Any]) -> None:
         ic(expose_name)
         msg = 'Already exposed function with name "%s"' % expose_name
-        assert expose_name not in self._exposed_functions, msg
-        self._exposed_functions[expose_name] = function
+        assert expose_name not in cls._exposed_functions, msg
+        cls._exposed_functions[expose_name] = function
 
 
     def _detect_shutdown(self) -> None:
@@ -715,8 +714,10 @@ class AsyncEel:
                 await close_callback(page, sockets)
             else:
                 close_callback(page, sockets)
-            
-        sys.exit(0)
+        # if self.runner:
+            # await self.runner.cleanup()  # Clean up aiohttp resources
+        # sys.exit(0)
+        quit()
 
 
     # def _set_response_headers(self, response: btl.Response) -> None:

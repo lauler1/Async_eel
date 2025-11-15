@@ -5,23 +5,22 @@ from async_eel.async_eel import AsyncEel
 
 # ic.configureOutput(prefix='sync_callbacks| ')
 
-print("------------------------------------------------------------------------------------------------")
-eel = AsyncEel()
-eel.init('web')
-
 async def close_callback(page, sockets):
     """
     Optional callback for websocket close
     """
     print(f"close_callback({page}, {sockets}): websocket is closed")
     
-@eel.expose
+@AsyncEel.expose
 def py_random():
     rnd = random.random()
     print(f"py_random() = {rnd}")
     return random.random()
 
 async def main():
+    print("------------------------------------------------------------------------------------------------")
+    eel = AsyncEel()
+    eel.init('web')
 
     await eel.start('sync_callbacks.html', size=(400, 300), close_callback=close_callback)
     
