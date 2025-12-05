@@ -463,10 +463,15 @@ class AsyncEel:
                 return web.Response(body=data, content_type=mime_type or "application/octet-stream")
 
             self._set_response_headers(response)
+            
+        except FileNotFoundError as file_not_found:
+            ic(file_not_found)
+            # traceback.print_exc()  # Prints the full stack trace to stderr
+            response = web.Response(text=f"Resource not found: {file_not_found}", status=404)
         except Exception as e:
             print(f"_static Exception = {e}")
             traceback.print_exc()  # Prints the full stack trace to stderr
-            response = web.Response(text=f"(_static) Internal Server Error: {e}", status=500)
+            response = web.Response(text=f"Internal Server Error: {e}", status=500)
             # sys.exit(1)
         return response
 
@@ -505,9 +510,9 @@ class AsyncEel:
         except Exception as e:
             print(f"_websocket Exception = {e}")
             # traceback.print_exc()  # Prints the full stack trace to stderr
-        finally:
-            self._websockets.remove((page, ws))
-            await self._websocket_close(page)
+        # finally:
+        self._websockets.remove((page, ws))
+        await self._websocket_close(page)
 
     def register_eel_routes(self, app: web.Application) -> None:
         # print(f"register_eel_routes:")
@@ -696,7 +701,8 @@ class AsyncEel:
         ic(etect_shutdown)
 
         if len(self._websockets) == 0:
-            sys.exit()
+            # sys.exit()
+            quit()
 
 
     async def _websocket_close(self, page: str) -> None:
