@@ -1,6 +1,16 @@
 eel = {
     _host: window.location.origin,
 
+	// Default onClose callback (can be replaced anytime)
+	onClose: function defaultOnClose(evt) {
+		console.log("EEL WebSocket connection lost!", evt.code, evt.reason || "");
+	},
+
+	// Default onError callback (can be replaced anytime)
+	onError: function defaultOnError(evt) {
+		console.log("EEL WebSocket connection error!", evt.code, evt.reason || "");
+	},
+
     set_host: function (hostname) {
         eel._host = hostname
     },
@@ -104,6 +114,7 @@ eel = {
     },
 
     _init: function() {
+		console.log("eel init");
         eel._mock_py_functions();
 
         document.addEventListener("DOMContentLoaded", function(event) {
@@ -158,8 +169,30 @@ eel = {
                 }
 
             };
+			
+			// Fired when the connection is lost *for any reason*
+			eel._websocket.addEventListener("close", (evt) => {
+				eel.onClose(evt);
+			});
+
+			// Optional: detect abrupt network failures
+			eel._websocket.addEventListener("error", (evt) => {
+				eel.onError(evt);
+			});
+			
         });
-    }
+    },
+
+	// Helper to replace the onClose callback at any time
+	setOnClose: function(handler) {
+		eel.onClose = typeof handler === "function" ? handler : eel.onClose;
+	},
+
+	// Helper to replace the onError callback at any time
+	setOnError: function(handler) {
+		eel.onError = typeof handler === "function" ? handler : eel.onError;
+	}
+
 };
 
 eel._init();
