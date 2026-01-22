@@ -723,7 +723,10 @@ class AsyncEel:
         # if self.runner:
             # await self.runner.cleanup()  # Clean up aiohttp resources
         # sys.exit(0)
-        quit()
+        try:
+            quit()
+        except Exception as e: 
+            print(f"_websocket_close Exception = {e}")
 
 
     # def _set_response_headers(self, response: btl.Response) -> None:
