@@ -323,7 +323,7 @@ class AsyncEel:
         if self._start_args['port'] == 0:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.bind(('localhost', 0))
-            _start_args['port'] = sock.getsockname()[1]
+            self._start_args['port'] = sock.getsockname()[1]
             sock.close()
 
         if self._start_args['jinja_templates'] is not None:

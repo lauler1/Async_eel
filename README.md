@@ -50,16 +50,41 @@ if __name__ == "__main__":
 
 ***
 
-### **Remote JavaScript calls**
+### **Python calls from JavaScript**
 
-*   Calls to remote JavaScript functions must now use `await`:
+The use of Async Eel remains the same as the origianl synchronous Eel. The same documentation still applies.
+
+Typical options:
+
+```javascript
+# Fire and forget
+eel.my_python_func();
+
+# Synchronous returns
+let val = eel.my_python_func()();
+
+# Wait return from inside a Async function
+let val = await eel.my_python_func()();
+
+```
+
+
+### **Remote JavaScript calls from Python**
+
+*   Fire and forget calls without return can be done by simple calls without await or callback:
+
+```python
+eel.js_random()
+```
+
+*   Calls to remote JavaScript functions that returns values must now use `await`:
 
 ```python
 res = await eel.js_random()()
 await eel.js_random()(my_callback)
 ```
 
-*   A more verbose (optional) syntax is also available:
+*   Or a more verbose (optional) syntax is also available:
 
 ```python
 res = await eel.js_random().wait_answer()
@@ -105,9 +130,12 @@ def print_num(n):
 
 ### **Exposing object methods**
 
-The `@AsyncEel.expose` may be not always an option, you can expose object methods from inside the instance with.
+The traditional way to expose python methos is with the decorator `@AsyncEel.expose`. 
+The decorator may be not always a good option, e.g. inside a class instance, alternatively you can expose object methods from inside the instance with.
 
 ```python
-self.my_function = AsyncEel.expose(self.my_function)
+self.my_python_method = AsyncEel.expose(self.my_python_method)
 ```
+
+**Note:** The instance of the class is not differentiated from the JavaScript side, e.g. the method above will be called as `eel.my_python_method();`.
 
